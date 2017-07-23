@@ -12,7 +12,7 @@ setup(
     name='gandip',
     version='1.0.0',
 
-    description='Keep your gandi DNS recordsup to date with your current IP',
+    description='Keep your gandi DNS records up to date with your current IP',
     long_description=long_description,
     url='https://github.com/ArnaudLevaufre/GandIP',
     author='Arnaud Levaufre',
@@ -24,7 +24,7 @@ setup(
 
         'Intended Audience :: Developers',
         'Intended Audience :: System Administrators',
-        'Intended Audience :: End Users/Desktop'
+        'Intended Audience :: End Users/Desktop',
         'Topic :: Internet :: Name Service (DNS)',
 
         'License :: OSI Approved :: MIT License',
