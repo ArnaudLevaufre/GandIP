@@ -1,16 +1,11 @@
 # GandIP
 
-## Description
-
-This script allows you to automatically send an email and update a gandi DNS
-zone when your public IP changes.
+Keep you gandi DNS records up to date with your current ip.
 
 ## Installation
 
-Easy peasy, edit the constants on top of the script. Then setup a cron job to
-run the script once in a while like so:
+Easy peasy, run `python setup.py install --user` and create a cron job so it runs every 15 minutes like so:
 
 ```
-*/30 * * * * /bin/python3 /path/to/the/script/gandip.py
+*/15 * * * * gandip your_gandi_api_key zone_name record1 record2 ... recordN
 ```
-
