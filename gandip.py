@@ -22,33 +22,19 @@ THE SOFTWARE.
 
 """
 
-import smtplib
 import urllib.request
 import xmlrpc.client
 import logging
-from email.mime.text import MIMEText
+import argparse
 
-
-SMTP_SERVER_IP = ""
-SMTP_SEVER_PORT = 587
-SMTP_SERVER_LOGIN = ""
-SMTP_SERVER_PASSwORD = ""
 
 IP_GETTER_URL = "http://5.39.16.10/tout/ip/"
-
 GANDI_API_URL = "https://rpc.gandi.net/xmlrpc/"
-GANDI_API_KEY = ""
-GANDI_ZONE_NAME = ""
-GANDI_RECORD_NAME = ""
+LOG_FORMAT = "[%(asctime)s][%(name)s][%(levelname)s] %(message)s"
 
-MAIL_FROM = ""
-MAIL_TO = ""
-MAIL_SUBJECT = "Home's IP address has changed to {ip}"
-MAIL_MESSAGE = "Home's IP address has changed to {ip}"
 
-LOG_FORMAT = "%(asctime)s -- %(levelname)s -- %(message)s"
-#logging.basicConfig(filename='gandip.log',level=logging.INFO, format=LOG_FORMAT)
-logging.basicConfig(level=logging.DEBUG, format=LOG_FORMAT)
+logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
+logger = logging.getLogger(__name__)
 
 
 class GandiAPI:
@@ -59,32 +45,47 @@ class GandiAPI:
     def get_current_record_ip(self, zone_name, record_name):
         return self.get_record(zone_name, record_name).get('value')
 
-    def update_record_ip(self, zone_name, record_name, ip):
-        logging.debug('Updating record...')
+    def update_records(self, zone_name, records):
         zone = self.get_zone(zone_name)
-        logging.debug('Zone is %s', zone)
+        current_ip = get_current_ip()
 
-        new_zone_version = self.api.domain.zone.version.new(self.key, zone['id'])
-        record = self.get_record(zone_name, record_name, new_zone_version)
-
-        if not record:
-            logging.critical('Did not find new record in zone.')
-            return False
-
-        logging.debug('New zone version is %s ', new_zone_version)
-        logging.debug('New record is %s ', record)
-        self.api.domain.zone.record.update(
+        all_records = self.api.domain.zone.record.list(
             self.key,
             zone['id'],
-            new_zone_version,
-            {'id': record['id']},
-            {
-                'name': record['name'],
-                'type': 'A',
-                'value': ip
-            }
+            zone['version'],
         )
-        self.api.domain.zone.version.set(self.key, zone['id'], new_zone_version)
+        filtered_records = list(filter(
+            lambda x: x['name'] in records, all_records
+        ))
+        has_different_ips = any(list(map(
+            lambda x: x['value'] != current_ip, filtered_records
+        )))
+
+        if has_different_ips:
+            new_zone_version = self.api.domain.zone.version.new(self.key, zone['id'])
+            for record in filtered_records:
+                record = self.get_record(zone['name'], record['name'], new_zone_version)
+                self.api.domain.zone.record.update(
+                    self.key,
+                    zone['id'],
+                    new_zone_version,
+                    {'id': record['id']},
+                    {
+                        'name': record['name'],
+                        'type': 'A',
+                        'value': current_ip
+                    }
+                )
+                logger.info(
+                    "Updating record %s in zone %s with new ip %s",
+                    record['name'],
+                    zone['name'],
+                    current_ip
+                )
+            self.api.domain.zone.version.set(self.key, zone['id'], new_zone_version)
+        else:
+            logger.info("Everything is up to date")
+
         return True
 
     def get_zone(self, zone_name):
@@ -100,50 +101,36 @@ class GandiAPI:
                 zone_version or zone['version'],
                 {'name': record_name}
             )[0]
-        except KeyError:
+        except IndexError:
             return {}
 
 
-def send_mail(from_="", to="", subject="", message=""):
-    with smtplib.SMTP(SMTP_SERVER_IP, SMTP_SEVER_PORT) as server:
-        server.starttls()
-        server.login(SMTP_SERVER_LOGIN, SMTP_SERVER_PASSwORD)
-        message = MIMEText(message)
-        message['subject'] = subject
-        message['from'] = from_
-        message['to'] = to
-        server.send_message(message)
-
-
-def get_ip():
+def get_current_ip():
     request = urllib.request.urlopen(IP_GETTER_URL)
     return request.read().decode()
 
 
+def main():
+    parser = argparse.ArgumentParser(
+        description=""""
+            Keep your gandi DNS records up to date with your current IP
+        """
+    )
+    parser.add_argument('key', type=str, help="Gandi API key")
+    parser.add_argument('zone', type=str, help="Zone to update")
+    parser.add_argument('record', type=str, nargs='+', help="Records to update")
+    parser.add_argument("--ip-getter", type=str, help="""
+        Web page that give your current ip. It should only return the ip as
+        text. Defaults to {}
+    """.format(IP_GETTER_URL))
+    args = parser.parse_args()
+
+    logger.info('Gandi record update started.')
+
+    api = GandiAPI(GANDI_API_URL, args.key)
+    api.update_records(args.zone, args.record)
+
+
+
 if __name__ == "__main__":
-    logging.info('Gandi record update started.')
-
-    api = GandiAPI(GANDI_API_URL, GANDI_API_KEY)
-    last_ip = api.get_current_record_ip(GANDI_ZONE_NAME, GANDI_RECORD_NAME)
-    logging.debug("Current record ip address is %s", last_ip)
-    current_ip = get_ip()
-    logging.debug("Current ip address is %s", current_ip)
-
-    if current_ip and current_ip != last_ip:
-        logging.info("Ip address has changed since last record update. New ip is %s", current_ip)
-        api.update_record_ip(
-            GANDI_ZONE_NAME,
-            GANDI_RECORD_NAME,
-            current_ip
-        )
-        send_mail(
-            from_=MAIL_FROM,
-            to=MAIL_TO,
-            subject=MAIL_SUBJECT.format(ip=current_ip),
-            message=MAIL_MESSAGE.format(ip=current_ip)
-        )
-    else:
-        logging.info("Ip address has not changed.")
-
-    logging.info('Gandi record update finished.')
-
+    main()
