@@ -1,6 +1,6 @@
 """
 
-Copyright (c) 2015 Arnaud Levaufre <arnaud@levaufre.name>
+Copyright (c) 2017 Arnaud Levaufre <arnaud@levaufre.name>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
