@@ -45,9 +45,8 @@ class GandiAPI:
     def get_current_record_ip(self, zone_name, record_name):
         return self.get_record(zone_name, record_name).get('value')
 
-    def update_records(self, zone_name, records):
+    def update_records(self, zone_name, records, current_ip):
         zone = self.get_zone(zone_name)
-        current_ip = get_current_ip()
 
         all_records = self.api.domain.zone.record.list(
             self.key,
@@ -105,8 +104,8 @@ class GandiAPI:
             return {}
 
 
-def get_current_ip():
-    request = urllib.request.urlopen(IP_GETTER_URL)
+def get_current_ip(provider_url=IP_GETTER_URL):
+    request = urllib.request.urlopen(provider_url)
     return request.read().decode()
 
 
@@ -119,7 +118,7 @@ def main():
     parser.add_argument('key', type=str, help="Gandi API key")
     parser.add_argument('zone', type=str, help="Zone to update")
     parser.add_argument('record', type=str, nargs='+', help="Records to update")
-    parser.add_argument("--ip-getter", type=str, help="""
+    parser.add_argument("--ip-getter", type=str, default=IP_GETTER_URL, help="""
         Web page that give your current ip. It should only return the ip as
         text. Defaults to {}
     """.format(IP_GETTER_URL))
@@ -127,10 +126,9 @@ def main():
 
     logger.info('Gandi record update started.')
 
+    current_ip = get_current_ip(args.ip_getter)
     api = GandiAPI(GANDI_API_URL, args.key)
-    api.update_records(args.zone, args.record)
-
-
+    api.update_records(args.zone, args.record, current_ip)
 
 if __name__ == "__main__":
     main()
