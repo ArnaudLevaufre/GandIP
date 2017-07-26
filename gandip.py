@@ -45,7 +45,7 @@ class GandiAPI:
     def get_current_record_ip(self, zone_name, record_name):
         return self.get_record(zone_name, record_name).get('value')
 
-    def update_records(self, zone_name, records, current_ip):
+    def update_records(self, zone_name, records, current_ip, ttl=10800):
         zone = self.get_zone(zone_name)
 
         all_records = self.api.domain.zone.record.list(
@@ -54,7 +54,7 @@ class GandiAPI:
             zone['version'],
         )
         filtered_records = list(filter(
-            lambda x: x['name'] in records, all_records
+            lambda x: x['name'] in records and x['type'] == 'A', all_records
         ))
         has_different_ips = any(list(map(
             lambda x: x['value'] != current_ip, filtered_records
@@ -72,7 +72,8 @@ class GandiAPI:
                     {
                         'name': record['name'],
                         'type': 'A',
-                        'value': current_ip
+                        'value': current_ip,
+                        'ttl': ttl,
                     }
                 )
                 logger.info(
@@ -122,13 +123,14 @@ def main():
         Web page that give your current ip. It should only return the ip as
         text. Defaults to {}
     """.format(IP_GETTER_URL))
+    parser.add_argument("--ttl", type=int, default=10800, help="Set a custom ttl (in second)")
     args = parser.parse_args()
 
     logger.info('Gandi record update started.')
 
     current_ip = get_current_ip(args.ip_getter)
     api = GandiAPI(GANDI_API_URL, args.key)
-    api.update_records(args.zone, args.record, current_ip)
+    api.update_records(args.zone, args.record, current_ip, ttl=args.ttl)
 
 if __name__ == "__main__":
     main()
