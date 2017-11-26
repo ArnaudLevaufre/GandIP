@@ -23,13 +23,15 @@ THE SOFTWARE.
 """
 
 import urllib.request
-import xmlrpc.client
 import logging
 import argparse
+import json
+
+import sys
 
 
 IP_GETTER_URL = "http://5.39.16.10/tout/ip/"
-GANDI_API_URL = "https://rpc.gandi.net/xmlrpc/"
+GANDI_API_URL = "https://dns.api.gandi.net/api/v5"
 LOG_FORMAT = "[%(asctime)s][%(name)s][%(levelname)s] %(message)s"
 
 
@@ -39,70 +41,55 @@ logger = logging.getLogger(__name__)
 
 class GandiAPI:
     def __init__(self, url, key):
-        self.api = xmlrpc.client.ServerProxy(url)
+        self.url = url
         self.key = key
 
-    def get_current_record_ip(self, zone_name, record_name):
-        return self.get_record(zone_name, record_name).get('value')
+    def update_records(self, fqdn, records, current_ip, ttl=10800):
+        all_records = self.get_record_list(fqdn)
 
-    def update_records(self, zone_name, records, current_ip, ttl=10800):
-        zone = self.get_zone(zone_name)
-
-        all_records = self.api.domain.zone.record.list(
-            self.key,
-            zone['id'],
-            zone['version'],
-        )
         filtered_records = list(filter(
-            lambda x: x['name'] in records and x['type'] == 'A', all_records
+            lambda x: x['rrset_name'] in records and x['rrset_type'] == 'A', all_records
         ))
         has_different_ips = any(list(map(
-            lambda x: x['value'] != current_ip, filtered_records
+            lambda x: x['rrset_values'] != [current_ip], filtered_records
         )))
 
         if has_different_ips:
-            new_zone_version = self.api.domain.zone.version.new(self.key, zone['id'])
             for record in filtered_records:
-                record = self.get_record(zone['name'], record['name'], new_zone_version)
-                self.api.domain.zone.record.update(
-                    self.key,
-                    zone['id'],
-                    new_zone_version,
-                    {'id': record['id']},
-                    {
-                        'name': record['name'],
-                        'type': 'A',
-                        'value': current_ip,
-                        'ttl': ttl,
-                    }
-                )
+                record["rrset_values"] = [current_ip]
+                record["rrset_ttl"] = ttl
+
                 logger.info(
-                    "Updating record %s in zone %s with new ip %s",
-                    record['name'],
-                    zone['name'],
+                    "Updating record %s for domain %s with new ip %s",
+                    record['rrset_name'],
+                    fqdn,
                     current_ip
                 )
-            self.api.domain.zone.version.set(self.key, zone['id'], new_zone_version)
+
+                name = record["rrset_name"]
+                request = urllib.request.Request(
+                    f"{self.url}/domains/{fqdn}/records/{name}",
+                    method="PUT",
+                    headers = {
+                        "Content-Type": "application/json",
+                        "X-Api-Key": self.key
+                    },
+                    data=json.dumps({
+                        "items": filtered_records
+                    }).encode()
+                )
+                with urllib.request.urlopen(request) as response:
+                    logger.debug(json.loads(response.read().decode()))
         else:
             logger.info("Everything is up to date")
 
         return True
 
-    def get_zone(self, zone_name):
-        for zone in self.api.domain.zone.list(self.key):
-            if zone['name'] == zone_name:
-                return zone
-
-    def get_record(self, zone_name, record_name, zone_version=None):
-        zone = self.get_zone(zone_name)
-        try:
-            return self.api.domain.zone.record.list(self.key,
-                zone['id'],
-                zone_version or zone['version'],
-                {'name': record_name}
-            )[0]
-        except IndexError:
-            return {}
+    def get_record_list(self, fqdn):
+        request = urllib.request.Request(f"{self.url}/domains/{fqdn}/records")
+        request.add_header("X-Api-Key", self.key)
+        with urllib.request.urlopen(request) as response:
+            return json.loads(response.read().decode())
 
 
 def get_current_ip(provider_url=IP_GETTER_URL):
@@ -131,6 +118,7 @@ def main():
     current_ip = get_current_ip(args.ip_getter)
     api = GandiAPI(GANDI_API_URL, args.key)
     api.update_records(args.zone, args.record, current_ip, ttl=args.ttl)
+
 
 if __name__ == "__main__":
     main()
