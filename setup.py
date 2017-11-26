@@ -10,7 +10,7 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name='gandip',
-    version='1.0.0',
+    version='2.0.0',
 
     description='Keep your gandi DNS records up to date with your current IP',
     long_description=long_description,
