@@ -48,13 +48,10 @@ class GandiAPI:
         all_records = self.get_record_list(fqdn)
 
         filtered_records = list(filter(
-            lambda x: x['rrset_name'] in records and x['rrset_type'] == 'A', all_records
+            lambda x: x['rrset_name'] in records and x['rrset_type'] == 'A' and current_ip not in x['rrset_values'], all_records
         ))
-        has_different_ips = any(list(map(
-            lambda x: x['rrset_values'] != [current_ip], filtered_records
-        )))
 
-        if has_different_ips:
+        if filtered_records:
             for record in filtered_records:
                 record["rrset_values"] = [current_ip]
                 record["rrset_ttl"] = ttl
@@ -75,7 +72,7 @@ class GandiAPI:
                         "X-Api-Key": self.key
                     },
                     data=json.dumps({
-                        "items": filtered_records
+                        "items": [record]
                     }).encode()
                 )
                 with urllib.request.urlopen(request) as response:
