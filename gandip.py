@@ -53,9 +53,6 @@ class GandiAPI:
 
         if filtered_records:
             for record in filtered_records:
-                record["rrset_values"] = [current_ip]
-                record["rrset_ttl"] = ttl
-
                 logger.info(
                     "Updating record %s for domain %s with new ip %s",
                     record['rrset_name'],
@@ -64,15 +61,17 @@ class GandiAPI:
                 )
 
                 name = record["rrset_name"]
+                rrset_type = record["rrset_type"]
                 request = urllib.request.Request(
-                    f"{self.url}/domains/{fqdn}/records/{name}",
+                    f"{self.url}/domains/{fqdn}/records/{name}/{rrset_type}",
                     method="PUT",
                     headers = {
                         "Content-Type": "application/json",
                         "X-Api-Key": self.key
                     },
                     data=json.dumps({
-                        "items": [record]
+                        "rrset_ttl": ttl,
+                        "rrset_values": [current_ip],
                     }).encode()
                 )
                 with urllib.request.urlopen(request) as response:
