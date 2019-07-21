@@ -22,10 +22,11 @@ THE SOFTWARE.
 
 """
 
-import urllib.request
-import logging
 import argparse
 import json
+import logging
+import os
+import urllib.request
 
 import sys
 
@@ -99,7 +100,7 @@ def main():
             Keep your gandi DNS records up to date with your current IP
         """
     )
-    parser.add_argument('key', type=str, help="Gandi API key")
+    parser.add_argument('key', type=str, help="Gandi API key or path to a file containing the key.")
     parser.add_argument('zone', type=str, help="Zone to update")
     parser.add_argument('record', type=str, nargs='+', help="Records to update")
     parser.add_argument("--ip-getter", type=str, default=IP_GETTER_URL, help="""
@@ -111,8 +112,13 @@ def main():
 
     logger.info('Gandi record update started.')
 
+    gandi_api_key = args.key
+    if os.path.isfile(args.key):
+        with open(args.key) as fle:
+            gandi_api_key = fle.read().strip()
+
     current_ip = get_current_ip(args.ip_getter)
-    api = GandiAPI(GANDI_API_URL, args.key)
+    api = GandiAPI(GANDI_API_URL, gandi_api_key)
     api.update_records(args.zone, args.record, current_ip, ttl=args.ttl)
 
 
