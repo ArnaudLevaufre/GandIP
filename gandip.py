@@ -28,10 +28,9 @@ import logging
 import os
 import urllib.request
 
-import sys
 
-
-IP_GETTER_URL = "http://5.39.16.10/tout/ip/"
+IPV4_PROVIDER_URL = "https://api.ipify.org"
+IPV6_PROVIDER_URL = "https://api6.ipify.org"
 GANDI_API_URL = "https://dns.api.gandi.net/api/v5"
 LOG_FORMAT = "[%(asctime)s][%(name)s][%(levelname)s] %(message)s"
 
@@ -45,28 +44,21 @@ class GandiAPI:
         self.url = url
         self.key = key
 
-    def update_records(self, fqdn, records, current_ip, ttl=10800):
-        all_records = self.get_record_list(fqdn)
+    def update_records(self, fqdn, record_names, current_ip, ttl=10800,
+                       rtype="A"):
 
-        filtered_records = list(filter(
-            lambda x: x['rrset_name'] in records and x['rrset_type'] == 'A' and current_ip not in x['rrset_values'], all_records
-        ))
-
-        if filtered_records:
-            for record in filtered_records:
+        for name in record_names:
+            record = self.get_domain_record_by_name(fqdn, name, rtype=rtype)
+            if record is not None and current_ip in record['rrset_values']:
                 logger.info(
-                    "Updating record %s for domain %s with new ip %s",
-                    record['rrset_name'],
-                    fqdn,
-                    current_ip
+                    "Record %s for %s.%s is up to date.",
+                    rtype, name, fqdn
                 )
-
-                name = record["rrset_name"]
-                rrset_type = record["rrset_type"]
+            else:
                 request = urllib.request.Request(
-                    f"{self.url}/domains/{fqdn}/records/{name}/{rrset_type}",
-                    method="PUT",
-                    headers = {
+                    f"{self.url}/domains/{fqdn}/records/{name}/{rtype}",
+                    method="POST" if record is None else "PUT",
+                    headers={
                         "Content-Type": "application/json",
                         "X-Api-Key": self.key
                     },
@@ -77,21 +69,26 @@ class GandiAPI:
                 )
                 with urllib.request.urlopen(request) as response:
                     logger.debug(json.loads(response.read().decode()))
-        else:
-            logger.info("Everything is up to date")
+                logger.info(
+                    "Record %s for %s.%s is set to %s.",
+                    rtype, name, fqdn, current_ip
+                )
 
-        return True
+    def get_domain_record_by_name(self, fqdn, name, rtype="A"):
+        try:
+            request = urllib.request.Request(
+                f"{self.url}/domains/{fqdn}/records/{name}/{rtype}"
+            )
+            request.add_header("X-Api-Key", self.key)
+            with urllib.request.urlopen(request) as response:
+                return json.loads(response.read().decode())
+        except urllib.error.HTTPError:
+            return None
 
-    def get_record_list(self, fqdn):
-        request = urllib.request.Request(f"{self.url}/domains/{fqdn}/records")
-        request.add_header("X-Api-Key", self.key)
-        with urllib.request.urlopen(request) as response:
-            return json.loads(response.read().decode())
 
-
-def get_current_ip(provider_url=IP_GETTER_URL):
-    request = urllib.request.urlopen(provider_url)
-    return request.read().decode()
+def get_current_ip(provider_url):
+    with urllib.request.urlopen(provider_url) as response:
+        return response.read().decode()
 
 
 def main():
@@ -103,23 +100,29 @@ def main():
     parser.add_argument('key', type=str, help="Gandi API key or path to a file containing the key.")
     parser.add_argument('zone', type=str, help="Zone to update")
     parser.add_argument('record', type=str, nargs='+', help="Records to update")
-    parser.add_argument("--ip-getter", type=str, default=IP_GETTER_URL, help="""
-        Web page that give your current ip. It should only return the ip as
-        text. Defaults to {}
-    """.format(IP_GETTER_URL))
     parser.add_argument("--ttl", type=int, default=10800, help="Set a custom ttl (in second)")
+    parser.add_argument("--noipv4", action="store_true", help="Do not set 'A' records to current ipv4")
+    parser.add_argument("--noipv6", action="store_true", help="Do not set 'AAAA' records to current ipv6")
     args = parser.parse_args()
 
     logger.info('Gandi record update started.')
 
-    gandi_api_key = args.key
     if os.path.isfile(args.key):
         with open(args.key) as fle:
             gandi_api_key = fle.read().strip()
+    else:
+        gandi_api_key = args.key
 
-    current_ip = get_current_ip(args.ip_getter)
     api = GandiAPI(GANDI_API_URL, gandi_api_key)
-    api.update_records(args.zone, args.record, current_ip, ttl=args.ttl)
+
+    if not args.noipv4:
+        current_ipv4 = get_current_ip(IPV4_PROVIDER_URL)
+        api.update_records(args.zone, args.record, current_ipv4, ttl=args.ttl)
+    if not args.noipv6:
+        current_ipv6 = get_current_ip(IPV6_PROVIDER_URL)
+        api.update_records(
+            args.zone, args.record, current_ipv6, ttl=args.ttl, rtype="AAAA"
+        )
 
 
 if __name__ == "__main__":
